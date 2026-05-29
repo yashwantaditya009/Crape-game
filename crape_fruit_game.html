@@ -1,0 +1,523 @@
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { overflow: hidden; }
+  #gameCanvas { display: block; background: #1a0a2e; cursor: none; }
+  #ui { position: absolute; top: 0; left: 0; width: 100%; pointer-events: none; }
+  #score-bar { display: flex; justify-content: space-between; align-items: center; padding: 10px 20px; background: rgba(0,0,0,0.5); color: #fff; font-family: 'Courier New', monospace; font-size: 18px; font-weight: bold; }
+  #score-bar span { text-shadow: 0 0 10px #f9c; }
+  #message { position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%); color: #fff; font-family: 'Courier New', monospace; font-size: 28px; font-weight: bold; text-align: center; text-shadow: 2px 2px 8px #000; pointer-events: all; }
+  #message button { margin-top: 16px; padding: 12px 32px; font-size: 20px; background: #7c3aed; color: #fff; border: none; border-radius: 999px; cursor: pointer; font-family: 'Courier New', monospace; font-weight: bold; display: block; margin: 16px auto 0; }
+  #message button:hover { background: #5b21b6; }
+  #lives { font-size: 22px; }
+</style>
+<canvas id="gameCanvas"></canvas>
+<div id="ui">
+  <div id="score-bar">
+    <span>🍇 CRAPES: <span id="score">0</span></span>
+    <span id="lives">❤️❤️❤️</span>
+    <span>⏱ <span id="timer">60</span>s</span>
+  </div>
+  <div id="message">
+    <div>🍇 CRAPE COLLECTOR 🍇</div>
+    <div style="font-size:14px;margin-top:8px;opacity:0.8">Move mouse to collect grapes!<br>Avoid 💀 skulls & 🌶️ chilis!</div>
+    <button id="startBtn">START CRAPING!</button>
+  </div>
+</div>
+<script>
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth || 680;
+  canvas.height = Math.max(window.innerHeight || 500, 480);
+}
+resize();
+window.addEventListener('resize', () => { resize(); });
+
+const state = {
+  running: false,
+  score: 0,
+  lives: 3,
+  timeLeft: 60,
+  playerX: canvas.width/2,
+  playerY: canvas.height - 80,
+  items: [],
+  particles: [],
+  wobble: 0,
+  mouthOpen: false,
+  mouthTimer: 0,
+  eyeWink: false,
+  winkTimer: 0,
+  gameOver: false,
+  win: false
+};
+
+let animId, tickId;
+
+canvas.addEventListener('mousemove', e => {
+  const r = canvas.getBoundingClientRect();
+  state.playerX = e.clientX - r.left;
+  state.playerY = Math.min(Math.max(e.clientY - r.top, 60), canvas.height - 40);
+});
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const r = canvas.getBoundingClientRect();
+  state.playerX = e.touches[0].clientX - r.left;
+  state.playerY = Math.min(Math.max(e.touches[0].clientY - r.top, 60), canvas.height - 40);
+}, {passive: false});
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+
+function startGame() {
+  document.getElementById('message').style.display = 'none';
+  state.running = true;
+  state.score = 0;
+  state.lives = 3;
+  state.timeLeft = 60;
+  state.items = [];
+  state.particles = [];
+  state.gameOver = false;
+  state.win = false;
+  state.playerX = canvas.width/2;
+  state.playerY = canvas.height - 80;
+  clearInterval(tickId);
+  tickId = setInterval(gameTick, 1000);
+  spawnItems();
+  loop();
+}
+
+function gameTick() {
+  if (!state.running) return;
+  state.timeLeft--;
+  document.getElementById('timer').textContent = state.timeLeft;
+  if (state.timeLeft <= 0) endGame(true);
+}
+
+function spawnItems() {
+  if (!state.running) return;
+  const types = ['grape','grape','grape','grape','skull','chili','banana','grape','grape','star'];
+  const t = types[Math.floor(Math.random()*types.length)];
+  state.items.push({
+    type: t,
+    x: 40 + Math.random() * (canvas.width - 80),
+    y: -30,
+    speed: 2 + Math.random() * 3 + (60 - state.timeLeft) * 0.04,
+    wobble: Math.random()*Math.PI*2,
+    wobbleSpeed: 0.05 + Math.random()*0.05,
+    size: t==='star' ? 28 : 22
+  });
+  setTimeout(spawnItems, 400 + Math.random()*600);
+}
+
+function endGame(win) {
+  state.running = false;
+  state.win = win;
+  state.gameOver = true;
+  clearInterval(tickId);
+  const msg = document.getElementById('message');
+  msg.style.display = '';
+  if (win) {
+    msg.innerHTML = `<div>🎉 YOU WIN! 🎉</div><div style="font-size:16px;margin-top:8px">You crape-d ${state.score} grapes!</div><div style="font-size:30px;margin-top:8px">😂🍇😂</div><button id="startBtn">PLAY AGAIN</button>`;
+  } else {
+    msg.innerHTML = `<div>💀 GAME OVER 💀</div><div style="font-size:16px;margin-top:8px">Score: ${state.score} grapes</div><div style="font-size:30px;margin-top:8px">😭🍇😭</div><button id="startBtn">TRY AGAIN</button>`;
+  }
+  document.getElementById('startBtn').addEventListener('click', startGame);
+}
+
+function spawnParticles(x, y, color, text) {
+  for (let i = 0; i < 8; i++) {
+    state.particles.push({
+      x, y,
+      vx: (Math.random()-0.5)*6,
+      vy: -2 - Math.random()*4,
+      life: 1,
+      color,
+      text: i===0 ? text : null,
+      size: 8 + Math.random()*6
+    });
+  }
+}
+
+function drawFace(x, y, wobble, mouthOpen, wink) {
+  ctx.save();
+  ctx.translate(x, y);
+  const scale = 0.95 + Math.sin(wobble)*0.05;
+  ctx.scale(scale, scale);
+
+  // Neck
+  ctx.fillStyle = '#c8906a';
+  ctx.fillRect(-12, 30, 24, 18);
+
+  // Head shape (slightly oval, beard-ish)
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 36, 40, 0, 0, Math.PI*2);
+  ctx.fillStyle = '#c8906a';
+  ctx.fill();
+
+  // Beard / jawline stubble
+  ctx.beginPath();
+  ctx.ellipse(0, 22, 30, 18, 0, 0, Math.PI);
+  ctx.fillStyle = '#3d2314';
+  ctx.fill();
+
+  // Stubble dots
+  ctx.fillStyle = '#5a3020';
+  for (let i = 0; i < 18; i++) {
+    const bx = (Math.random()-0.5)*50;
+    const by = 10 + Math.random()*20;
+    ctx.beginPath();
+    ctx.arc(bx, by, 1.2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Hair - dark, wavy top
+  ctx.beginPath();
+  ctx.moveTo(-36, -10);
+  ctx.bezierCurveTo(-40, -50, -20, -55, 0, -50);
+  ctx.bezierCurveTo(20, -55, 40, -50, 36, -10);
+  ctx.bezierCurveTo(32, -35, 0, -42, -36, -10);
+  ctx.fillStyle = '#1a0a02';
+  ctx.fill();
+
+  // Ears
+  ctx.fillStyle = '#c8906a';
+  ctx.beginPath();
+  ctx.ellipse(-38, -2, 8, 11, -0.2, 0, Math.PI*2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(38, -2, 8, 11, 0.2, 0, Math.PI*2);
+  ctx.fill();
+
+  // Eyes
+  // Left eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(-14, -8, 11, wink ? 2 : 8, 0, 0, Math.PI*2);
+  ctx.fill();
+  if (!wink) {
+    ctx.fillStyle = '#3d2010';
+    ctx.beginPath();
+    ctx.ellipse(-14, -8, 5, 5, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(-12, -10, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Right eye
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.ellipse(14, -8, 11, 8, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#3d2010';
+  ctx.beginPath();
+  ctx.ellipse(14, -8, 5, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#fff';
+  ctx.beginPath();
+  ctx.arc(16, -10, 2, 0, Math.PI*2);
+  ctx.fill();
+
+  // Eyebrows
+  ctx.strokeStyle = '#1a0a02';
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(-22, -20);
+  ctx.quadraticCurveTo(-14, -24, -6, -20);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(6, -20);
+  ctx.quadraticCurveTo(14, -24, 22, -20);
+  ctx.stroke();
+
+  // Nose
+  ctx.strokeStyle = '#a0724a';
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  ctx.moveTo(0, -4);
+  ctx.lineTo(-3, 8);
+  ctx.lineTo(-8, 10);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(0, -4);
+  ctx.lineTo(3, 8);
+  ctx.lineTo(8, 10);
+  ctx.stroke();
+
+  // Mouth
+  if (mouthOpen) {
+    ctx.fillStyle = '#2a0a0a';
+    ctx.beginPath();
+    ctx.ellipse(0, 20, 14, 10, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#e06060';
+    ctx.beginPath();
+    ctx.ellipse(0, 22, 12, 7, 0, 0, Math.PI*2);
+    ctx.fill();
+    // Teeth
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(-10, 18, 8, 5);
+    ctx.fillRect(2, 18, 8, 5);
+  } else {
+    ctx.strokeStyle = '#3d2010';
+    ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    ctx.moveTo(-12, 20);
+    ctx.quadraticCurveTo(0, 26, 12, 20);
+    ctx.stroke();
+  }
+
+  // Little sweat drop when eating
+  if (mouthOpen) {
+    ctx.fillStyle = '#7dd3fc';
+    ctx.beginPath();
+    ctx.arc(30, -30, 5, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(30, -25);
+    ctx.lineTo(27, -15);
+    ctx.lineTo(33, -15);
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawItem(item) {
+  const wx = item.x + Math.sin(item.wobble)*15;
+  ctx.save();
+  ctx.translate(wx, item.y);
+  const s = item.size;
+
+  if (item.type === 'grape') {
+    const cols = ['#7c3aed','#6d28d9','#8b5cf6','#a78bfa'];
+    const pos = [[-8,-12],[8,-12],[0,-4],[-14,0],[14,0],[-6,10],[6,10]];
+    pos.forEach((p,i) => {
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], 8, 0, Math.PI*2);
+      ctx.fillStyle = cols[i%cols.length];
+      ctx.fill();
+      ctx.strokeStyle = '#4c1d95';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    });
+    ctx.fillStyle = '#15803d';
+    ctx.fillRect(-2, -22, 4, 6);
+    ctx.strokeStyle = '#15803d';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(2, -20);
+    ctx.bezierCurveTo(14, -26, 16, -18, 10, -14);
+    ctx.stroke();
+  } else if (item.type === 'skull') {
+    ctx.fillStyle = '#e5e7eb';
+    ctx.beginPath();
+    ctx.ellipse(0, -4, s/2, s/2.4, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#1f2937';
+    ctx.beginPath();
+    ctx.ellipse(-7, -6, 5, 6, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(7, -6, 5, 6, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#e5e7eb';
+    ctx.fillRect(-12, 6, 24, 10);
+    ctx.fillStyle = '#1f2937';
+    for (let i = -10; i <= 10; i += 8) {
+      ctx.fillRect(i, 7, 5, 8);
+    }
+    ctx.fillStyle = '#e5e7eb';
+    ctx.beginPath();
+    ctx.ellipse(0, -1, 4, 4, 0, 0, Math.PI*2);
+    ctx.fill();
+  } else if (item.type === 'chili') {
+    ctx.fillStyle = '#dc2626';
+    ctx.beginPath();
+    ctx.moveTo(0, -s/2);
+    ctx.bezierCurveTo(s/2, -s/4, s/2, s/4, 0, s/2);
+    ctx.bezierCurveTo(-s/2, s/4, -s/2, -s/4, 0, -s/2);
+    ctx.fill();
+    ctx.fillStyle = '#15803d';
+    ctx.fillRect(-3, -s/2-6, 6, 8);
+  } else if (item.type === 'banana') {
+    ctx.fillStyle = '#fbbf24';
+    ctx.beginPath();
+    ctx.moveTo(-s/2, s/4);
+    ctx.bezierCurveTo(-s/3, -s/2, s/3, -s/2, s/2, s/4);
+    ctx.bezierCurveTo(s/3, s/2, -s/3, s/2, -s/2, s/4);
+    ctx.fill();
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  } else if (item.type === 'star') {
+    ctx.fillStyle = '#fde68a';
+    drawStar(ctx, 0, 0, 5, s/2, s/4);
+    ctx.fillStyle = '#fbbf24';
+    ctx.strokeStyle = '#d97706';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawStar(ctx, cx, cy, spikes, outer, inner) {
+  ctx.beginPath();
+  for (let i = 0; i < spikes*2; i++) {
+    const r = i%2===0 ? outer : inner;
+    const a = (i * Math.PI) / spikes - Math.PI/2;
+    i===0 ? ctx.moveTo(cx+Math.cos(a)*r, cy+Math.sin(a)*r) : ctx.lineTo(cx+Math.cos(a)*r, cy+Math.sin(a)*r);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawParticles() {
+  state.particles.forEach(p => {
+    ctx.save();
+    ctx.globalAlpha = p.life;
+    ctx.fillStyle = p.color;
+    ctx.font = `bold ${p.size}px Courier New`;
+    ctx.textAlign = 'center';
+    if (p.text) {
+      ctx.fillStyle = '#fff';
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 8;
+      ctx.fillText(p.text, p.x, p.y);
+    } else {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size/2, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+}
+
+function drawBackground() {
+  // Starry bg
+  ctx.fillStyle = '#1a0a2e';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = 'rgba(255,255,255,0.5)';
+  for (let i = 0; i < 60; i++) {
+    const sx = ((i*137 + 17) % canvas.width);
+    const sy = ((i*239 + 53) % (canvas.height - 50));
+    ctx.beginPath();
+    ctx.arc(sx, sy+50, 1, 0, Math.PI*2);
+    ctx.fill();
+  }
+  // Ground
+  const grad = ctx.createLinearGradient(0, canvas.height-40, 0, canvas.height);
+  grad.addColorStop(0, '#3b0764');
+  grad.addColorStop(1, '#1a0a2e');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, canvas.height-40, canvas.width, 40);
+}
+
+let lastTime = 0;
+function loop(ts = 0) {
+  if (!state.running && !state.gameOver) return;
+  animId = requestAnimationFrame(loop);
+  const dt = Math.min((ts - lastTime)/16, 3);
+  lastTime = ts;
+
+  drawBackground();
+
+  state.wobble += 0.08 * dt;
+  state.mouthTimer -= dt;
+  if (state.mouthTimer < 0) state.mouthOpen = false;
+
+  state.winkTimer -= dt;
+  if (state.winkTimer < 0) {
+    state.eyeWink = false;
+    if (Math.random() < 0.008) {
+      state.eyeWink = true;
+      state.winkTimer = 8;
+    }
+  }
+
+  // Update + draw items
+  const playerR = 38;
+  state.items = state.items.filter(item => {
+    item.wobble += item.wobbleSpeed * dt;
+    item.y += item.speed * dt;
+
+    const wx = item.x + Math.sin(item.wobble)*15;
+    const dx = wx - state.playerX;
+    const dy = item.y - state.playerY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+
+    if (dist < playerR + item.size/2) {
+      if (item.type === 'grape') {
+        state.score += 1;
+        state.mouthOpen = true;
+        state.mouthTimer = 6;
+        spawnParticles(wx, item.y, '#7c3aed', '+1 🍇');
+      } else if (item.type === 'star') {
+        state.score += 5;
+        state.mouthOpen = true;
+        state.mouthTimer = 8;
+        spawnParticles(wx, item.y, '#fbbf24', '+5 ⭐');
+      } else if (item.type === 'banana') {
+        state.score += 2;
+        state.mouthOpen = true;
+        state.mouthTimer = 6;
+        spawnParticles(wx, item.y, '#fbbf24', '+2 🍌');
+      } else if (item.type === 'skull') {
+        state.lives--;
+        spawnParticles(wx, item.y, '#ef4444', '-1 ☠️');
+        updateLives();
+        if (state.lives <= 0) endGame(false);
+      } else if (item.type === 'chili') {
+        state.lives--;
+        state.mouthOpen = true;
+        state.mouthTimer = 20;
+        spawnParticles(wx, item.y, '#dc2626', '🌶️ HOT!');
+        updateLives();
+        if (state.lives <= 0) endGame(false);
+      }
+      document.getElementById('score').textContent = state.score;
+      return false;
+    }
+
+    if (item.y > canvas.height + 40) return false;
+
+    drawItem(item);
+    return true;
+  });
+
+  // Particles
+  state.particles = state.particles.filter(p => {
+    p.x += p.vx * dt;
+    p.y += p.vy * dt;
+    p.vy += 0.1 * dt;
+    p.life -= 0.02 * dt;
+    return p.life > 0;
+  });
+  drawParticles();
+
+  // Draw the face player
+  drawFace(state.playerX, state.playerY, state.wobble, state.mouthOpen, state.eyeWink);
+
+  // Score display on canvas
+  ctx.fillStyle = 'rgba(255,255,255,0.07)';
+  ctx.fillRect(0, 0, canvas.width, 44);
+}
+
+function updateLives() {
+  const hearts = ['❤️','❤️','❤️','🖤','🖤','🖤'].slice(0,3).map((_,i) => i < state.lives ? '❤️' : '🖤').join('');
+  document.getElementById('lives').textContent = hearts;
+}
+
+// Start animation loop for menu screen
+animId = requestAnimationFrame(function menuLoop(ts) {
+  if (state.running) return;
+  animId = requestAnimationFrame(menuLoop);
+  state.wobble += 0.04;
+  drawBackground();
+  drawFace(canvas.width/2, canvas.height/2 + 60, state.wobble, false, false);
+});
+</script>
